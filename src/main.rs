@@ -20,16 +20,18 @@ pub const ROM_API_TABLE_ROOT: *const bootloader_api_table_t =
 
 pub const FLASH_BASE: u32 = XPI0_MEM_START;
 // pub const MEM_START: u32 = XPI1_MEM_START;
-
 struct Algorithm {
     nor_config: xpi_nor_config_t,
     cfg_option: xpi_nor_config_option_t,
     xpi_base: *mut XPI_Type,
 }
 
+// 使用你提供的 XPI0 基地址
+pub const XPI0_BASE: u32 = 0xF3040000;
+
 algorithm!(Algorithm, {
     flash_address: 0x80000000,
-    flash_size: 0x100000, // 1M
+    flash_size: 0x400000, // 修改为 4MB
     page_size: 256,
     empty_value: 0xFF,
     sectors: [{
@@ -83,47 +85,34 @@ unsafe fn flash_auth_probe(
 
 impl FlashAlgorithm for Algorithm {
     fn new(address: u32, _clock: u32, _function: Function) -> Result<Self, ErrorCode> {
-        // mcu clock and peripheral re-init
-        SYSCTL.group0(0).value().modify(|w| w.set_link(0xFFFFFFFF));
-        SYSCTL.group0(1).value().modify(|w| w.set_link(0xFFFFFFFF));
-        // connect group0 to cpu0
-        SYSCTL.affiliate(0).set().write(|w| w.set_link(1));
-
-        let xpi_base = pac::XPI0.as_ptr() as *mut XPI_Type;
-
         unsafe {
+            let sysctl = &pac::SYSCTL;
+
+            // 1. 根据资源索引图使能硬件
+            sysctl.resource(1).modify(|w| w.set_mode(1)); // AXI 总线
+            sysctl.resource(5).modify(|w| w.set_mode(1)); // ILM/DLM
+            sysctl.resource(6).modify(|w| w.set_mode(1)); // AXI_SRAM
+            sysctl.resource(8).modify(|w| w.set_mode(1)); // XPI0 资源使能
+
+            // 2. 设置 XPI0 基地址
+            let xpi_base = 0xF3040000 as *mut XPI_Type;
+
             let mut nor_cfg: romapi::xpi_nor_config_t = core::mem::zeroed();
             let mut option: xpi_nor_config_option_t = core::mem::zeroed();
-            /* HPM5300
-            #define BOARD_APP_XPI_NOR_CFG_OPT_HDR  (0xfcf90002U)
-            #define BOARD_APP_XPI_NOR_CFG_OPT_OPT0 (0x00000006U)
-            #define BOARD_APP_XPI_NOR_CFG_OPT_OPT1 (0x00001000U)
-            */
+
+            // 3. 填入官方提供的 Option 参数 [引用自用户提供的官方 Option]
             option.header.U = 0xfcf90002;
-            option.option0.U = 0x00000006;
-            option.option1.U = 0x00001000;
+            option.option0.U = 0x00000007; // 频率选项 7
+            option.option1.U = 0x00001000; // Pin Group 1, CA 端口
+            option.option2.U = 0x00000000;
 
+            // 4. 调用 ROM API 进行自动配置
             let xpi_nor_driver = &*(&*ROM_API_TABLE_ROOT).xpi_nor_driver_if;
-
             let ret = xpi_nor_driver.auto_config.unwrap()(xpi_base, &mut nor_cfg, &mut option);
+
             if ret != 0 {
                 return Err(ErrorCode::new(ret as _).unwrap());
             }
-
-            /*
-            let addr = address - FLASH_BASE;
-            let ret = xpi_nor_driver.enable_write.unwrap()(
-                xpi_base,
-                xpi_xfer_channel_auto,
-                &nor_cfg,
-                addr,
-            );
-            if ret != 0 {
-                return Err(ErrorCode::new(ret as _).unwrap());
-            }
-            */
-
-            nor_cfg.device_info.clk_freq_for_non_read_cmd = 0;
 
             Ok(Self {
                 nor_config: nor_cfg,

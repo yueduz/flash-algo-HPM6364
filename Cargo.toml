@@ -1,8 +1,8 @@
 [package]
-authors = ["Andelf <andelf@gmail.com>"]
+authors = ["Yueduz <yueduz@gmail.com>"]
 edition = "2021"
 readme = "README.md"
-name = "flash-algo"
+name = "flash-algo-hpm6364"
 version = "0.1.0"
 
 [dependencies]
@@ -10,9 +10,10 @@ flash-algorithm = { version = "0.4.0", default-features = false, features = [
     "erase-chip",
 ] }
 panic-halt = "0.2.0"
-hpm-metapac = { version = "0.0.3", features = [
-    "hpm5361",
-], path = "../hpm-data/build/hpm-metapac" }
+
+# 将 path 替换为 git 仓库地址，并确保 feature 为 hpm6364
+hpm-metapac = { git = "https://github.com/hpmicro-rs/hpm-metapac.git", features = ["hpm6364"] }
+
 # defmt = "0.3.8"
 # defmt-rtt = "0.4.1"
 
@@ -22,7 +23,7 @@ xpi1 = []
 
 # this lets you use `cargo fix`!
 [[bin]]
-name = "flash-algo"
+name = "flash-algo-hpm6364"
 test = false
 bench = false
 
